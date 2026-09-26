@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Boom } from '@hapi/boom';
 import { SqliteMessageRepository } from '../../database/repositories/messageRepo.js';
+import { DomainEventBus } from '../../../application/services/domainEventBus.js';
 
 export type SessionStatus = 'disconnected' | 'connecting' | 'qr_ready' | 'connected';
 
@@ -352,6 +353,37 @@ export class BaileysSessionManager {
           timestamp: ts,
           raw: m,
         });
+
+        // Emit inbound message event to DomainEventBus for Triggers & Webhooks
+        if (!m.key.fromMe) {
+          const senderJid = m.key.participant || chatJid;
+          const senderPhone = senderJid.replace(/[^0-9]/g, '');
+          DomainEventBus.getInstance().emitMessageReceived({
+            channel: {
+              id: channelId,
+              name: channelId,
+              phoneNumber: sessionState.userPhone || undefined,
+            },
+            sender: {
+              jid: senderJid,
+              phoneNumber: senderPhone,
+              name: m.pushName || undefined,
+            },
+            chat: {
+              jid: chatJid,
+              isGroup: chatJid.endsWith('@g.us'),
+              name: m.pushName || undefined,
+            },
+            message: {
+              id: msgId,
+              text,
+              type,
+              timestamp: ts,
+              timestampISO: new Date(ts).toISOString(),
+            },
+            receivedAt: new Date().toISOString(),
+          });
+        }
       }
     });
 

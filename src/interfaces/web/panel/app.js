@@ -184,6 +184,7 @@
     loadRecentChats();
     loadProviders();
     loadChannels();
+    loadTriggers();
   }
 
   // Tab Navigation
@@ -204,6 +205,7 @@
     if (tabId === 'chats') loadChatsTab();
     if (tabId === 'providers') loadProviders();
     if (tabId === 'channels') loadChannels();
+    if (tabId === 'triggers') loadTriggers();
     if (tabId === 'mcp') loadMcpGuide();
   };
 
@@ -1266,6 +1268,433 @@
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
   }
+
+  // ── TRIGGERS & WEBHOOKS MODULE ──────────────────────────────────────────
+  let cachedTriggers = [];
+  let activeDeliveriesTriggerId = null;
+
+  const triggersTableBody = document.getElementById('triggers-table-body');
+  const refreshTriggersBtn = document.getElementById('refresh-triggers-btn');
+  const openTriggerModalBtn = document.getElementById('open-trigger-modal-btn');
+  const triggerModal = document.getElementById('trigger-modal');
+  const triggerForm = document.getElementById('trigger-form');
+  const triggerModalTitle = document.getElementById('trigger-modal-title');
+  const trigIdInput = document.getElementById('trig-id');
+  const trigNameInput = document.getElementById('trig-name');
+  const trigChannelSelect = document.getElementById('trig-channel');
+  const trigUrlInput = document.getElementById('trig-url');
+  const trigMethodSelect = document.getElementById('trig-method');
+  const trigHeadersInput = document.getElementById('trig-headers');
+  const trigCustomTemplateSection = document.getElementById('trig-custom-template-section');
+  const trigTemplateInput = document.getElementById('trig-template');
+  const trigFilterTypeSelect = document.getElementById('trig-filter-type');
+  const trigFilterKeywordInput = document.getElementById('trig-filter-keyword');
+  const trigIgnoreGroupsCheckbox = document.getElementById('trig-ignore-groups');
+  const trigTimeoutInput = document.getElementById('trig-timeout');
+  const trigRetriesInput = document.getElementById('trig-retries');
+  const trigDelayInput = document.getElementById('trig-delay');
+  const trigSecretInput = document.getElementById('trig-secret');
+  const trigModalAlert = document.getElementById('trig-modal-alert');
+  const trigSaveBtn = document.getElementById('trig-save-btn');
+
+  const triggerTestModal = document.getElementById('trigger-test-modal');
+  const testResultLoader = document.getElementById('test-result-loader');
+  const testResultContent = document.getElementById('test-result-content');
+  const testResStatus = document.getElementById('test-res-status');
+  const testResDuration = document.getElementById('test-res-duration');
+  const testResPayload = document.getElementById('test-res-payload');
+  const testResBody = document.getElementById('test-res-body');
+
+  const triggerDeliveriesModal = document.getElementById('trigger-deliveries-modal');
+  const deliveriesModalTitle = document.getElementById('deliveries-modal-title');
+  const deliveriesTableBody = document.getElementById('deliveries-table-body');
+  const delivPendingCount = document.getElementById('deliv-pending-count');
+  const delivOkCount = document.getElementById('deliv-ok-count');
+  const delivFailedCount = document.getElementById('deliv-failed-count');
+  const retryAllFailedBtn = document.getElementById('retry-all-failed-btn');
+
+  // Mode radio change
+  document.querySelectorAll('input[name="trig-mode"]').forEach((radio) => {
+    radio.addEventListener('change', (e) => {
+      if (e.target.value === 'custom') {
+        trigCustomTemplateSection.classList.remove('hidden');
+      } else {
+        trigCustomTemplateSection.classList.add('hidden');
+      }
+    });
+  });
+
+  // Variable Chips click handler
+  document.querySelectorAll('.var-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const varText = chip.getAttribute('data-var');
+      const start = trigTemplateInput.selectionStart || 0;
+      const end = trigTemplateInput.selectionEnd || 0;
+      const text = trigTemplateInput.value;
+      trigTemplateInput.value = text.substring(0, start) + varText + text.substring(end);
+      trigTemplateInput.focus();
+      trigTemplateInput.selectionStart = trigTemplateInput.selectionEnd = start + varText.length;
+    });
+  });
+
+  // Quick Template buttons
+  const tplBtnCrm = document.getElementById('tpl-btn-crm');
+  const tplBtnSlack = document.getElementById('tpl-btn-slack');
+  const tplBtnClean = document.getElementById('tpl-btn-clean');
+
+  if (tplBtnCrm) {
+    tplBtnCrm.addEventListener('click', () => {
+      trigTemplateInput.value = JSON.stringify({
+        source: "WhatsApp - {{channel.name}}",
+        phone: "{{sender.phoneNumber}}",
+        name: "{{sender.name}}",
+        message: "{{message.text}}",
+        received_at: "{{message.timestampISO}}"
+      }, null, 2);
+    });
+  }
+
+  if (tplBtnSlack) {
+    tplBtnSlack.addEventListener('click', () => {
+      trigTemplateInput.value = JSON.stringify({
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "*Nuevo Mensaje WhatsApp:* {{sender.name}} ({{sender.phoneNumber}})"
+            }
+          },
+          {
+            type: "section",
+            text: {
+              type: "plain_text",
+              text: "{{message.text}}"
+            }
+          }
+        ]
+      }, null, 2);
+    });
+  }
+
+  if (tplBtnClean) {
+    tplBtnClean.addEventListener('click', () => {
+      trigTemplateInput.value = '{\n  \n}';
+    });
+  }
+
+  async function loadTriggers() {
+    if (!triggersTableBody) return;
+    try {
+      const triggers = await api('/api/admin/triggers');
+      cachedTriggers = triggers;
+      renderTriggers();
+    } catch (err) {
+      triggersTableBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">Error: ${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  function renderTriggers() {
+    if (!triggersTableBody) return;
+    if (cachedTriggers.length === 0) {
+      triggersTableBody.innerHTML = `<tr><td colspan="8" class="text-center text-muted" style="padding: 2.5rem 1rem;">
+        No hay disparadores configurados.<br>
+        <button class="btn btn-primary btn-sm mt-2" onclick="window.openTriggerModal()">+ Crear el Primer Disparador</button>
+      </td></tr>`;
+      return;
+    }
+
+    triggersTableBody.innerHTML = cachedTriggers.map((t) => {
+      const channelObj = cachedChannels.find((c) => c.id === t.channelId);
+      const channelLabel = t.channelId ? (channelObj ? channelObj.name : t.channelId) : '⚡ Todos (Global)';
+      const isCustom = t.payloadMode === 'custom';
+      const stats = t.stats || { pending: 0, delivered: 0, failed: 0 };
+
+      return `
+        <tr>
+          <td><strong>${escapeHtml(t.name)}</strong></td>
+          <td><span class="badge ${t.channelId ? 'badge-yellow' : 'badge-green'}">${escapeHtml(channelLabel)}</span></td>
+          <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            <code>${escapeHtml(t.targetUrl)}</code>
+          </td>
+          <td><span class="badge badge-gray">${escapeHtml(t.targetMethod)}</span></td>
+          <td><span class="badge ${isCustom ? 'badge-yellow' : 'badge-green'}">${isCustom ? 'Personalizado' : 'Estándar'}</span></td>
+          <td>
+            <span class="badge badge-green">${stats.delivered} OK</span>
+            ${stats.failed > 0 ? `<span class="badge badge-red">${stats.failed} Fallos</span>` : ''}
+            ${stats.pending > 0 ? `<span class="badge badge-yellow">${stats.pending} Pend.</span>` : ''}
+          </td>
+          <td>
+            <label style="cursor: pointer; display: flex; align-items: center; gap: 0.35rem;">
+              <input type="checkbox" ${t.isActive ? 'checked' : ''} onchange="window.toggleTriggerActive('${t.id}', this.checked)">
+              <small>${t.isActive ? 'Activo' : 'Pausa'}</small>
+            </label>
+          </td>
+          <td>
+            <div style="display: flex; gap: 0.35rem; align-items: center;">
+              <button type="button" class="btn btn-secondary btn-xs" onclick="window.testTrigger('${t.id}')" title="Probar con datos simulados">⚡ Probar</button>
+              <button type="button" class="btn btn-secondary btn-xs" onclick="window.openDeliveries('${t.id}')" title="Ver historial de entregas">📋 Entregas</button>
+              <button type="button" class="btn btn-secondary btn-xs" onclick="window.openTriggerModal('${t.id}')" title="Editar">✏</button>
+              <button type="button" class="btn btn-danger btn-xs" onclick="window.deleteTrigger('${t.id}')" title="Eliminar">🗑</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  window.openTriggerModal = (triggerId = null) => {
+    trigModalAlert.classList.add('hidden');
+    trigIdInput.value = triggerId || '';
+
+    // Populate channels dropdown
+    trigChannelSelect.innerHTML = `<option value="">⚡ Todos los canales (Global)</option>` +
+      cachedChannels.map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)} (${escapeHtml(c.phoneNumber || 'Sin número')})</option>`).join('');
+
+    if (triggerId) {
+      const t = cachedTriggers.find((item) => item.id === triggerId);
+      if (!t) return;
+      triggerModalTitle.textContent = '✏ Editar Disparador (Webhook)';
+      trigNameInput.value = t.name;
+      trigChannelSelect.value = t.channelId || '';
+      trigUrlInput.value = t.targetUrl;
+      trigMethodSelect.value = t.targetMethod || 'POST';
+      trigHeadersInput.value = JSON.stringify(t.targetHeaders || { 'Content-Type': 'application/json' }, null, 2);
+
+      const isCustom = t.payloadMode === 'custom';
+      document.querySelector(`input[name="trig-mode"][value="${isCustom ? 'custom' : 'standard'}"]`).checked = true;
+      if (isCustom) {
+        trigCustomTemplateSection.classList.remove('hidden');
+        trigTemplateInput.value = JSON.stringify(t.payloadTemplate || {}, null, 2);
+      } else {
+        trigCustomTemplateSection.classList.add('hidden');
+        trigTemplateInput.value = '';
+      }
+
+      trigFilterTypeSelect.value = t.filterMessageType || 'all';
+      trigFilterKeywordInput.value = t.filterKeyword || '';
+      trigIgnoreGroupsCheckbox.checked = t.filterIgnoreGroups !== false;
+      trigTimeoutInput.value = t.timeoutMs || 5000;
+      trigRetriesInput.value = t.maxRetries ?? 3;
+      trigDelayInput.value = t.retryDelayMs || 10000;
+      trigSecretInput.value = t.secretToken || '';
+    } else {
+      triggerModalTitle.textContent = '⚡ Configurar Disparador (Webhook)';
+      trigNameInput.value = '';
+      trigChannelSelect.value = '';
+      trigUrlInput.value = '';
+      trigMethodSelect.value = 'POST';
+      trigHeadersInput.value = '{\n  "Content-Type": "application/json"\n}';
+      document.querySelector('input[name="trig-mode"][value="standard"]').checked = true;
+      trigCustomTemplateSection.classList.add('hidden');
+      trigTemplateInput.value = '';
+      trigFilterTypeSelect.value = 'all';
+      trigFilterKeywordInput.value = '';
+      trigIgnoreGroupsCheckbox.checked = true;
+      trigTimeoutInput.value = 5000;
+      trigRetriesInput.value = 3;
+      trigDelayInput.value = 10000;
+      trigSecretInput.value = '';
+    }
+
+    triggerModal.classList.remove('hidden');
+  };
+
+  if (openTriggerModalBtn) {
+    openTriggerModalBtn.addEventListener('click', () => window.openTriggerModal());
+  }
+  if (refreshTriggersBtn) {
+    refreshTriggersBtn.addEventListener('click', loadTriggers);
+  }
+
+  if (triggerForm) {
+    triggerForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      trigModalAlert.classList.add('hidden');
+      trigSaveBtn.disabled = true;
+
+      try {
+        const id = trigIdInput.value;
+        const mode = document.querySelector('input[name="trig-mode"]:checked')?.value || 'standard';
+
+        let targetHeaders = {};
+        if (trigHeadersInput.value.trim()) {
+          try {
+            targetHeaders = JSON.parse(trigHeadersInput.value.trim());
+          } catch {
+            throw new Error('El campo Cabeceras HTTP no contiene un JSON válido');
+          }
+        }
+
+        let payloadTemplate = {};
+        if (mode === 'custom' && trigTemplateInput.value.trim()) {
+          try {
+            payloadTemplate = JSON.parse(trigTemplateInput.value.trim());
+          } catch {
+            throw new Error('La plantilla de Carga Útil no contiene un JSON válido');
+          }
+        }
+
+        const body = {
+          name: trigNameInput.value.trim(),
+          channelId: trigChannelSelect.value || null,
+          targetUrl: trigUrlInput.value.trim(),
+          targetMethod: trigMethodSelect.value,
+          targetHeaders,
+          payloadMode: mode,
+          payloadTemplate,
+          filterMessageType: trigFilterTypeSelect.value,
+          filterKeyword: trigFilterKeywordInput.value.trim() || null,
+          filterIgnoreGroups: trigIgnoreGroupsCheckbox.checked,
+          timeoutMs: Number(trigTimeoutInput.value) || 5000,
+          maxRetries: Number(trigRetriesInput.value) >= 0 ? Number(trigRetriesInput.value) : 3,
+          retryDelayMs: Number(trigDelayInput.value) || 10000,
+          secretToken: trigSecretInput.value.trim() || null,
+        };
+
+        if (id) {
+          await api(`/api/admin/triggers/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+        } else {
+          await api('/api/admin/triggers', { method: 'POST', body: JSON.stringify(body) });
+        }
+
+        triggerModal.classList.add('hidden');
+        loadTriggers();
+      } catch (err) {
+        trigModalAlert.textContent = err.message;
+        trigModalAlert.className = 'alert error';
+        trigModalAlert.classList.remove('hidden');
+      } finally {
+        trigSaveBtn.disabled = false;
+      }
+    });
+  }
+
+  window.toggleTriggerActive = async (id, isActive) => {
+    try {
+      await api(`/api/admin/triggers/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ isActive }),
+      });
+      loadTriggers();
+    } catch (err) {
+      alert(err.message);
+      loadTriggers();
+    }
+  };
+
+  window.deleteTrigger = async (id) => {
+    if (!confirm('¿Estás seguro de eliminar este disparador y su cola de entregas?')) return;
+    try {
+      await api(`/api/admin/triggers/${id}`, { method: 'DELETE' });
+      loadTriggers();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  window.testTrigger = async (id) => {
+    triggerTestModal.classList.remove('hidden');
+    testResultLoader.classList.remove('hidden');
+    testResultContent.classList.add('hidden');
+
+    try {
+      const res = await api(`/api/admin/triggers/${id}/test`, { method: 'POST' });
+      testResultLoader.classList.add('hidden');
+      testResultContent.classList.remove('hidden');
+
+      const isSuccess = res.success;
+      testResStatus.textContent = res.statusCode ? `HTTP ${res.statusCode}` : 'Error de Conexión';
+      testResStatus.className = `stat-value ${isSuccess ? 'text-green' : 'text-danger'}`;
+      testResDuration.textContent = `${res.durationMs} ms`;
+      testResPayload.textContent = JSON.stringify(res.payloadSent, null, 2);
+      testResBody.textContent = res.responseBody || (res.error ? `Error: ${res.error}` : '(Cuerpo de respuesta vacío)');
+    } catch (err) {
+      testResultLoader.classList.add('hidden');
+      testResultContent.classList.remove('hidden');
+      testResStatus.textContent = 'Error';
+      testResStatus.className = 'stat-value text-danger';
+      testResDuration.textContent = '0 ms';
+      testResPayload.textContent = '-';
+      testResBody.textContent = err.message;
+    }
+  };
+
+  window.openDeliveries = async (triggerId) => {
+    activeDeliveriesTriggerId = triggerId;
+    const t = cachedTriggers.find((item) => item.id === triggerId);
+    deliveriesModalTitle.textContent = `📋 Entregas: ${t ? t.name : triggerId}`;
+    triggerDeliveriesModal.classList.remove('hidden');
+    deliveriesTableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Cargando entregas...</td></tr>';
+    loadDeliveries(triggerId);
+  };
+
+  async function loadDeliveries(triggerId) {
+    try {
+      const deliveries = await api(`/api/admin/triggers/${triggerId}/deliveries`);
+      const pending = deliveries.filter((d) => d.status === 'pending').length;
+      const delivered = deliveries.filter((d) => d.status === 'delivered').length;
+      const failed = deliveries.filter((d) => d.status === 'failed').length;
+
+      delivPendingCount.textContent = `${pending} Pendientes`;
+      delivOkCount.textContent = `${delivered} Entregadas`;
+      delivFailedCount.textContent = `${failed} Fallidas`;
+
+      if (deliveries.length === 0) {
+        deliveriesTableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Aún no se han registrado eventos o entregas para este disparador.</td></tr>';
+        return;
+      }
+
+      deliveriesTableBody.innerHTML = deliveries.map((d) => {
+        let statusBadge = `<span class="badge badge-yellow">Pendiente</span>`;
+        if (d.status === 'delivered') statusBadge = `<span class="badge badge-green">Entregada</span>`;
+        if (d.status === 'failed') statusBadge = `<span class="badge badge-red">Fallida</span>`;
+
+        return `
+          <tr>
+            <td>${statusBadge}</td>
+            <td><small>${escapeHtml(new Date(d.createdAt).toLocaleString())}</small></td>
+            <td>${d.attempts} / ${d.maxRetries}</td>
+            <td><code>${d.lastStatusCode ? `HTTP ${d.lastStatusCode}` : '-'}</code></td>
+            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(d.lastError || '')}">
+              <small class="text-muted">${escapeHtml(d.lastError || '-')}</small>
+            </td>
+            <td>
+              ${d.status !== 'delivered' ? `<button type="button" class="btn btn-secondary btn-xs" onclick="window.retrySingleDelivery('${d.id}')">↻ Reintentar</button>` : '-'}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    } catch (err) {
+      deliveriesTableBody.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Error: ${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  if (retryAllFailedBtn) {
+    retryAllFailedBtn.addEventListener('click', async () => {
+      if (!activeDeliveriesTriggerId) return;
+      try {
+        const res = await api(`/api/admin/triggers/${activeDeliveriesTriggerId}/retry-failed`, { method: 'POST' });
+        alert(res.message || 'Entregas fallidas reencoladas para reintento');
+        loadDeliveries(activeDeliveriesTriggerId);
+        loadTriggers();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  }
+
+  window.retrySingleDelivery = async (deliveryId) => {
+    try {
+      await api(`/api/admin/triggers/deliveries/${deliveryId}/retry`, { method: 'POST' });
+      if (activeDeliveriesTriggerId) {
+        loadDeliveries(activeDeliveriesTriggerId);
+      }
+      loadTriggers();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
 
   // Check initial state
   if (token) {

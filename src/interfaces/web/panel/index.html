@@ -58,6 +58,9 @@
         <button class="nav-item" data-tab="channels">
           <span class="icon">📱</span> Canales / Líneas
         </button>
+        <button class="nav-item" data-tab="triggers">
+          <span class="icon">⚡</span> Disparadores (Webhooks)
+        </button>
         <button class="nav-item" data-tab="mcp">
           <span class="icon">🤖</span> Conexión MCP
         </button>
@@ -264,7 +267,43 @@
         </div>
       </section>
 
-      <!-- Tab 4: MCP Connection Guide -->
+      <!-- Tab 4: Triggers & Webhooks Manager -->
+      <section id="tab-triggers" class="tab-pane">
+        <header class="page-header">
+          <div>
+            <h1>Disparadores y Webhooks Salientes</h1>
+            <p class="text-muted">Despacha peticiones HTTP dinámicas a tus sistemas (CRM, ERP, Slack, n8n) cuando alguien escriba en WhatsApp.</p>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-secondary btn-sm" id="refresh-triggers-btn">↻ Actualizar</button>
+            <button class="btn btn-primary btn-sm" id="open-trigger-modal-btn">+ Nuevo Disparador</button>
+          </div>
+        </header>
+
+        <div class="card mt-4">
+          <div class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Canal</th>
+                  <th>Destino URL</th>
+                  <th>Método</th>
+                  <th>Modo</th>
+                  <th>Entregas (OK / Fallos)</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="triggers-table-body">
+                <tr><td colspan="8" class="text-center text-muted">Cargando disparadores...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 5: MCP Connection Guide -->
       <section id="tab-mcp" class="tab-pane">
         <header class="page-header">
           <div>
@@ -519,6 +558,244 @@
           </button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal Trigger Create / Edit -->
+  <div id="trigger-modal" class="modal hidden">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-header">
+        <h3 id="trigger-modal-title">⚡ Configurar Disparador (Webhook)</h3>
+        <button class="close-modal">&times;</button>
+      </div>
+      <form id="trigger-form">
+        <div class="modal-body">
+          <input type="hidden" id="trig-id">
+
+          <!-- Basic Configuration -->
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="trig-name">Nombre del Disparador *</label>
+              <input type="text" id="trig-name" placeholder="ej. Webhook CRM Leads" required>
+            </div>
+            <div class="form-group flex-1">
+              <label for="trig-channel">Canal / Línea Asociada</label>
+              <select id="trig-channel">
+                <option value="">⚡ Todos los canales (Global)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-3">
+              <label for="trig-url">URL Destino (Endpoint Receptor) *</label>
+              <input type="url" id="trig-url" placeholder="https://mi-sistema.com/api/webhook" required>
+            </div>
+            <div class="form-group flex-1">
+              <label for="trig-method">Método HTTP</label>
+              <select id="trig-method">
+                <option value="POST" selected>POST</option>
+                <option value="PUT">PUT</option>
+                <option value="GET">GET</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="trig-headers">Cabeceras HTTP (JSON)</label>
+            <textarea id="trig-headers" rows="2" style="font-family: monospace; font-size: 0.85rem;" placeholder='{"Content-Type": "application/json", "Authorization": "Bearer token"}'></textarea>
+            <small class="text-muted">Encabezados personalizados como Authorization, tokens o API keys.</small>
+          </div>
+
+          <!-- Payload Mode & Dynamic Template -->
+          <div class="form-group">
+            <label>Modo de Carga Útil (Payload)</label>
+            <div style="display: flex; gap: 1.5rem; margin-top: 0.25rem;">
+              <label style="cursor: pointer; display: flex; align-items: center; gap: 0.4rem;">
+                <input type="radio" name="trig-mode" value="standard" checked>
+                <strong>Estándar</strong> (JSON canónico unificado de WhatsApp)
+              </label>
+              <label style="cursor: pointer; display: flex; align-items: center; gap: 0.4rem;">
+                <input type="radio" name="trig-mode" value="custom">
+                <strong>Personalizado</strong> (Plantilla dinámica para sistemas existentes)
+              </label>
+            </div>
+          </div>
+
+          <!-- Custom Template Builder (Shown only when custom is selected) -->
+          <div id="trig-custom-template-section" class="hidden">
+            <div class="flex-between mb-1">
+              <label for="trig-template">Plantilla JSON Personalizada</label>
+              <div class="template-quick-buttons">
+                <span class="text-muted" style="font-size: 0.75rem;">Plantillas rápidas:</span>
+                <button type="button" class="btn btn-xs btn-secondary" id="tpl-btn-crm">CRM Lead</button>
+                <button type="button" class="btn btn-xs btn-secondary" id="tpl-btn-slack">Slack Block</button>
+                <button type="button" class="btn btn-xs btn-secondary" id="tpl-btn-clean">Limpiar</button>
+              </div>
+            </div>
+
+            <!-- Variable Chips -->
+            <div class="variable-chips-container mb-2">
+              <span class="chips-label">Insertar variable:</span>
+              <button type="button" class="var-chip" data-var="{{sender.phoneNumber}}">Teléfono</button>
+              <button type="button" class="var-chip" data-var="{{sender.name}}">Nombre</button>
+              <button type="button" class="var-chip" data-var="{{message.text}}">Texto Mensaje</button>
+              <button type="button" class="var-chip" data-var="{{message.timestampISO}}">Fecha ISO</button>
+              <button type="button" class="var-chip" data-var="{{channel.name}}">Nombre Canal</button>
+              <button type="button" class="var-chip" data-var="{{message.id}}">ID Mensaje</button>
+              <button type="button" class="var-chip" data-var="{{message.mentions}}">Menciones (Array)</button>
+            </div>
+
+            <textarea id="trig-template" rows="6" style="font-family: monospace; font-size: 0.85rem;" placeholder='{\n  "telefono": "{{sender.phoneNumber}}",\n  "cliente": "{{sender.name}}",\n  "mensaje": "{{message.text}}"\n}'></textarea>
+            <small class="text-muted">Escribe un objeto JSON. Las variables entre doble llave se resolverán dinámicamente.</small>
+          </div>
+
+          <!-- Filters Section -->
+          <details class="trigger-details-section mt-3">
+            <summary><strong>⚙️ Filtros de Activación (Opcional)</strong></summary>
+            <div class="details-content mt-2">
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label for="trig-filter-type">Tipo de Mensaje</label>
+                  <select id="trig-filter-type">
+                    <option value="all">Todos los tipos</option>
+                    <option value="text">Solo Texto</option>
+                    <option value="media">Solo Multimedia (Imágenes/Video/Audio)</option>
+                    <option value="document">Solo Documentos</option>
+                  </select>
+                </div>
+                <div class="form-group flex-1">
+                  <label for="trig-filter-keyword">Palabra Clave / Subcadena</label>
+                  <input type="text" id="trig-filter-keyword" placeholder="ej. #pedido o soporte">
+                </div>
+              </div>
+              <div class="form-group">
+                <label style="cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+                  <input type="checkbox" id="trig-ignore-groups" checked>
+                  Ignorar mensajes de grupos de WhatsApp (solo chats individuales)
+                </label>
+              </div>
+            </div>
+          </details>
+
+          <!-- Resilience & Security Section -->
+          <details class="trigger-details-section mt-2">
+            <summary><strong>🛡️ Resiliencia, Reintentos y Seguridad HMAC (Opcional)</strong></summary>
+            <div class="details-content mt-2">
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label for="trig-timeout">Timeout (ms)</label>
+                  <input type="number" id="trig-timeout" value="5000" min="1000" max="30000">
+                  <small class="text-muted">Por defecto: 5000 ms (5s).</small>
+                </div>
+                <div class="form-group flex-1">
+                  <label for="trig-retries">Reintentos Máximos</label>
+                  <input type="number" id="trig-retries" value="3" min="0" max="10">
+                  <small class="text-muted">Ante caídas de red o 5xx.</small>
+                </div>
+                <div class="form-group flex-1">
+                  <label for="trig-delay">Retraso Base Reintento (ms)</label>
+                  <input type="number" id="trig-delay" value="10000" min="1000" max="300000">
+                  <small class="text-muted">Por defecto: 10000 ms (10s).</small>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="trig-secret">Secreto de Firma HMAC (Opcional)</label>
+                <input type="password" id="trig-secret" placeholder="Clave secreta para cabecera X-Hub-Signature-256">
+                <small class="text-muted">Si se define, se enviará la firma SHA-256 en la cabecera X-Hub-Signature-256.</small>
+              </div>
+            </div>
+          </details>
+
+          <div id="trig-modal-alert" class="alert hidden mt-3"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary close-modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="trig-save-btn">Guardar Disparador</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Test Trigger -->
+  <div id="trigger-test-modal" class="modal hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>⚡ Resultado de la Prueba en Vivo</h3>
+        <button class="close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="test-result-loader" class="text-center p-3">
+          <div class="spinner"></div>
+          <p class="text-muted mt-2">Enviando petición de prueba al receptor...</p>
+        </div>
+        <div id="test-result-content" class="hidden">
+          <div class="stats-grid mb-3">
+            <div class="stat-card">
+              <span class="stat-title">Estado HTTP</span>
+              <span class="stat-value" id="test-res-status">-</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-title">Tiempo de Respuesta</span>
+              <span class="stat-value" id="test-res-duration">-</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Carga Útil Enviada (Payload)</label>
+            <pre class="snippet-code" style="max-height: 140px; overflow-y: auto;"><code id="test-res-payload">-</code></pre>
+          </div>
+          <div class="form-group">
+            <label>Respuesta del Servidor Receptor</label>
+            <pre class="snippet-code" style="max-height: 140px; overflow-y: auto;"><code id="test-res-body">-</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary close-modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Deliveries & Failures History -->
+  <div id="trigger-deliveries-modal" class="modal hidden">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3 id="deliveries-modal-title">📋 Entregas y Cola Outbox</h3>
+          <p class="text-muted" id="deliveries-modal-subtitle">Historial de despachos y estado</p>
+        </div>
+        <button class="close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="flex-between mb-3">
+          <div>
+            <span class="badge badge-yellow" id="deliv-pending-count">0 Pendientes</span>
+            <span class="badge badge-green" id="deliv-ok-count">0 Entregadas</span>
+            <span class="badge badge-red" id="deliv-failed-count">0 Fallidas</span>
+          </div>
+          <button type="button" class="btn btn-danger btn-sm" id="retry-all-failed-btn">↻ Reintentar Todos los Fallidos</button>
+        </div>
+        <div class="table-container" style="max-height: 350px; overflow-y: auto;">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Estado</th>
+                <th>Fecha</th>
+                <th>Intentos</th>
+                <th>Código</th>
+                <th>Error</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody id="deliveries-table-body">
+              <tr><td colspan="6" class="text-center text-muted">Cargando entregas...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary close-modal">Cerrar</button>
+      </div>
     </div>
   </div>
 

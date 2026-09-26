@@ -113,6 +113,53 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    name: '004_triggers_and_outbox',
+    up: (db: Database.Database) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS triggers (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          channel_id TEXT REFERENCES channels(id) ON DELETE CASCADE,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          filter_message_type TEXT NOT NULL DEFAULT 'all',
+          filter_ignore_groups INTEGER NOT NULL DEFAULT 1,
+          filter_keyword TEXT,
+          target_url TEXT NOT NULL,
+          target_method TEXT NOT NULL DEFAULT 'POST',
+          target_headers_json TEXT NOT NULL DEFAULT '{}',
+          payload_mode TEXT NOT NULL DEFAULT 'standard',
+          payload_template_json TEXT NOT NULL DEFAULT '{}',
+          timeout_ms INTEGER NOT NULL DEFAULT 5000,
+          max_retries INTEGER NOT NULL DEFAULT 3,
+          retry_delay_ms INTEGER NOT NULL DEFAULT 10000,
+          secret_token_encrypted TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS trigger_deliveries (
+          id TEXT PRIMARY KEY,
+          trigger_id TEXT NOT NULL REFERENCES triggers(id) ON DELETE CASCADE,
+          message_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          attempts INTEGER NOT NULL DEFAULT 0,
+          max_retries INTEGER NOT NULL DEFAULT 3,
+          next_retry_at INTEGER NOT NULL,
+          last_status_code INTEGER,
+          last_error TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_deliveries_pending ON trigger_deliveries(status, next_retry_at);
+        CREATE INDEX IF NOT EXISTS idx_deliveries_trigger ON trigger_deliveries(trigger_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_triggers_channel ON triggers(channel_id);
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

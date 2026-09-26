@@ -50,6 +50,17 @@
   3. Escaneas el código desde WhatsApp en tu teléfono (*Dispositivos vinculados > Vincular un dispositivo*).
   4. La sesión se autentica, almacena las credenciales en `./data/sessions/<channel_id>/` de forma permanente y detecta el número telefónico automáticamente.
 
+### 2.4 Gestión de Disparadores (Webhooks Salientes)
+- **Registrar Disparador:** Permite configurar un webhook para reaccionar a mensajes entrantes de WhatsApp:
+  - **Asociación de Canal:** Asigna el disparador a una línea específica o a todas las líneas globales.
+  - **URL y Método HTTP:** Configura endpoints `POST`, `PUT` o `GET` con cabeceras HTTP personalizadas (ej. tokens de autorización).
+  - **Modo Estándar vs Personalizado:** Elige entre enviar el JSON unificado de WhatsApp o definir una plantilla dinámica (`{{sender.phoneNumber}}`, `{{message.text}}`, etc.) con plantillas rápidas de 1 clic para CRM o Slack.
+  - **Filtros Avanzados:** Filtra por tipo de mensaje (texto, multimedia, documentos), descarta automáticamente mensajes de grupos o filtra por palabras clave.
+  - **Resiliencia:** Configura timeout por petición (default: 5000 ms), reintentos máximos (default: 3) y retraso base para backoff exponencial.
+  - **Firma HMAC-SHA256:** Permite definir un secreto para firmar el cuerpo en la cabecera `X-Hub-Signature-256`.
+- **⚡ Probar en Vivo:** Envía una petición de prueba simulada inmediata al receptor y muestra en pantalla el código HTTP devuelto, tiempo de respuesta en ms y cuerpo devuelto.
+- **📋 Entregas y Cola Outbox:** Inspecciona el historial de entregas de cada disparador, visualiza causas de error y reintenta mensajes individuales o utiliza el botón **`↻ Reintentar Todos los Fallidos`**.
+
 ---
 
 ## 3. Documentación Interactiva OpenAPI / Swagger UI

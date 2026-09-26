@@ -9,13 +9,18 @@ import { createProvidersRouter } from './routes/providers.js';
 import { createChannelsRouter } from './routes/channels.js';
 import { createSessionRouter } from './routes/session.js';
 import { createDashboardRouter } from './routes/dashboard.js';
+import { createTriggersRouter } from './routes/triggers.js';
 import { BaileysSessionManager } from '../../infrastructure/providers/baileys/sessionManager.js';
+import { ITriggerRepository } from '../../domain/ports/ITriggerRepository.js';
+import { TriggerDispatcher } from '../../application/services/triggerDispatcher.js';
 
 export interface AdminRouterDependencies {
   authService: AdminAuthService;
   providerRepo: IProviderRepository;
   channelRepo: IChannelRepository;
   providerFactory: ProviderFactory;
+  triggerRepo: ITriggerRepository;
+  triggerDispatcher: TriggerDispatcher;
   mcpApiToken?: string;
 }
 
@@ -46,6 +51,7 @@ export function createAdminRouter(deps: AdminRouterDependencies): Router {
   router.use('/providers', authMiddleware, createProvidersRouter(deps.providerRepo, deps.providerFactory));
   router.use('/channels', authMiddleware, createChannelsRouter(deps.channelRepo, deps.providerRepo));
   router.use('/channels', authMiddleware, createSessionRouter(deps.channelRepo, deps.providerRepo, sessionManager));
+  router.use('/triggers', authMiddleware, createTriggersRouter(deps.triggerRepo, deps.triggerDispatcher));
   router.use('/dashboard', authMiddleware, createDashboardRouter(deps.providerRepo, deps.channelRepo, deps.mcpApiToken));
 
   return router;

@@ -31,6 +31,10 @@
     {
       "name": "Administración",
       "description": "Gestión de proveedores, canales / líneas y métricas del sistema"
+    },
+    {
+      "name": "Disparadores (Webhooks)",
+      "description": "Gestión de disparadores salientes con cola Outbox persistente y reintentos"
     }
   ],
   "components": {
@@ -455,6 +459,93 @@
         "responses": {
           "200": { "description": "Estadísticas del gateway y canal predeterminado" }
         }
+      }
+    },
+    "/api/admin/triggers": {
+      "get": {
+        "tags": ["Disparadores (Webhooks)"],
+        "summary": "Listar todos los disparadores configurados",
+        "responses": {
+          "200": { "description": "Lista de disparadores con estadísticas de entrega" }
+        }
+      },
+      "post": {
+        "tags": ["Disparadores (Webhooks)"],
+        "summary": "Crear un nuevo disparador (Webhook saliente)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "targetUrl"],
+                "properties": {
+                  "name": { "type": "string", "example": "Webhook CRM" },
+                  "channelId": { "type": "string", "nullable": true, "description": "ID del canal o null para todos" },
+                  "targetUrl": { "type": "string", "example": "https://api.crm.com/v1/leads" },
+                  "targetMethod": { "type": "string", "enum": ["POST", "PUT", "GET"], "default": "POST" },
+                  "targetHeaders": { "type": "object", "example": { "Content-Type": "application/json", "Authorization": "Bearer secret" } },
+                  "payloadMode": { "type": "string", "enum": ["standard", "custom"], "default": "standard" },
+                  "payloadTemplate": { "type": "object", "example": { "phone": "{{sender.phoneNumber}}", "notes": "{{message.text}}" } },
+                  "filterMessageType": { "type": "string", "default": "all" },
+                  "filterIgnoreGroups": { "type": "boolean", "default": true },
+                  "filterKeyword": { "type": "string", "nullable": true },
+                  "timeoutMs": { "type": "integer", "default": 5000 },
+                  "maxRetries": { "type": "integer", "default": 3 },
+                  "retryDelayMs": { "type": "integer", "default": 10000 },
+                  "secretToken": { "type": "string", "nullable": true, "description": "Secreto para firma HMAC-SHA256" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Disparador creado con éxito" }
+        }
+      }
+    },
+    "/api/admin/triggers/{id}": {
+      "get": {
+        "tags": ["Disparadores (Webhooks)"],
+        "summary": "Obtener disparador por ID",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Detalle del disparador" } }
+      },
+      "put": {
+        "tags": ["Disparadores (Webhooks)"],
+        "summary": "Actualizar disparador existente",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Disparador actualizado" } }
+      },
+      "delete": {
+        "tags": ["Disparadores (Webhooks)"],
+        "summary": "Eliminar disparador",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Disparador eliminado" } }
+      }
+    },
+    "/api/admin/triggers/{id}/test": {
+      "post": {
+        "tags": ["Disparadores (Webhooks)"],
+        "summary": "Probar disparador en tiempo real con datos simulados",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Resultado de la prueba HTTP con status code y latencia" } }
+      }
+    },
+    "/api/admin/triggers/{id}/deliveries": {
+      "get": {
+        "tags": ["Disparadores (Webhooks)"],
+        "summary": "Consultar historial de entregas de un disparador",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Historial de entregas y estado" } }
+      }
+    },
+    "/api/admin/triggers/{id}/retry-failed": {
+      "post": {
+        "tags": ["Disparadores (Webhooks)"],
+        "summary": "Reintentar masivamente todas las entregas fallidas",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Cantidad de entregas reenviadas a la cola de procesamiento" } }
       }
     }
   }

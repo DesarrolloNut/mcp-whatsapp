@@ -16,6 +16,8 @@ import { runMigrations } from './infrastructure/database/migrations.js';
 import { SqliteProviderRepository } from './infrastructure/database/repositories/providerRepo.js';
 import { SqliteChannelRepository } from './infrastructure/database/repositories/channelRepo.js';
 import { SqliteMessageRepository } from './infrastructure/database/repositories/messageRepo.js';
+import { SqliteTriggerRepository } from './infrastructure/database/repositories/triggerRepo.js';
+import { TriggerDispatcher } from './application/services/triggerDispatcher.js';
 import { ProviderFactory } from './application/services/providerFactory.js';
 import { ChannelResolver } from './application/services/channelResolver.js';
 import { AdminAuthService } from './application/services/adminAuth.js';
@@ -51,6 +53,10 @@ async function startServerMode(): Promise<void> {
   const providerRepo = new SqliteProviderRepository(db, config.encryptionKey);
   const channelRepo = new SqliteChannelRepository(db);
   const messageRepo = new SqliteMessageRepository(db);
+  const triggerRepo = new SqliteTriggerRepository(db, config.encryptionKey);
+  const triggerDispatcher = new TriggerDispatcher(triggerRepo);
+  triggerDispatcher.start();
+
   const sessionManager = BaileysSessionManager.getInstance(undefined, messageRepo);
   sessionManager.setMessageRepo(messageRepo);
   const providerFactory = new ProviderFactory(config.encryptionKey, sessionManager);
@@ -118,6 +124,8 @@ async function startServerMode(): Promise<void> {
       providerRepo,
       channelRepo,
       providerFactory,
+      triggerRepo,
+      triggerDispatcher,
       mcpApiToken: config.mcpApiToken,
     })
   );
