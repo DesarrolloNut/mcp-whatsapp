@@ -17,7 +17,10 @@ import { SqliteProviderRepository } from './infrastructure/database/repositories
 import { SqliteChannelRepository } from './infrastructure/database/repositories/channelRepo.js';
 import { SqliteMessageRepository } from './infrastructure/database/repositories/messageRepo.js';
 import { SqliteTriggerRepository } from './infrastructure/database/repositories/triggerRepo.js';
+import { SqliteAgentBindingRepository } from './infrastructure/database/repositories/agentBindingRepo.js';
 import { TriggerDispatcher } from './application/services/triggerDispatcher.js';
+import { AgentConnector } from './application/services/agentConnector.js';
+import { AgentOrchestrator } from './application/services/agentOrchestrator.js';
 import { ProviderFactory } from './application/services/providerFactory.js';
 import { ChannelResolver } from './application/services/channelResolver.js';
 import { AdminAuthService } from './application/services/adminAuth.js';
@@ -57,11 +60,22 @@ async function startServerMode(): Promise<void> {
   const triggerDispatcher = new TriggerDispatcher(triggerRepo);
   triggerDispatcher.start();
 
+  const agentBindingRepo = new SqliteAgentBindingRepository(db);
+  const agentConnector = new AgentConnector();
+
   const sessionManager = BaileysSessionManager.getInstance(undefined, messageRepo);
   sessionManager.setMessageRepo(messageRepo);
   const providerFactory = new ProviderFactory(config.encryptionKey, sessionManager);
   const channelResolver = new ChannelResolver(channelRepo, providerRepo, providerFactory);
   const adminAuthService = new AdminAuthService(config);
+
+  const agentOrchestrator = new AgentOrchestrator(
+    agentBindingRepo,
+    channelResolver,
+    agentConnector,
+    sessionManager
+  );
+  agentOrchestrator.start();
 
   // 3. Hydrate existing Baileys WhatsApp Web sessions
   try {
@@ -126,6 +140,8 @@ async function startServerMode(): Promise<void> {
       providerFactory,
       triggerRepo,
       triggerDispatcher,
+      agentBindingRepo,
+      agentConnector,
       mcpApiToken: config.mcpApiToken,
     })
   );
@@ -171,6 +187,16 @@ async function startStdioMode(): Promise<void> {
   sessionManager.setMessageRepo(messageRepo);
   const providerFactory = new ProviderFactory(config.encryptionKey, sessionManager);
   const channelResolver = new ChannelResolver(channelRepo, providerRepo, providerFactory);
+
+  const agentBindingRepo = new SqliteAgentBindingRepository(db);
+  const agentConnector = new AgentConnector();
+  const agentOrchestrator = new AgentOrchestrator(
+    agentBindingRepo,
+    channelResolver,
+    agentConnector,
+    sessionManager
+  );
+  agentOrchestrator.start();
 
   // 3. Hydrate active Baileys WhatsApp Web sessions if any
   try {

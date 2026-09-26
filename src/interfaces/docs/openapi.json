@@ -35,6 +35,10 @@
     {
       "name": "Disparadores (Webhooks)",
       "description": "Gestión de disparadores salientes con cola Outbox persistente y reintentos"
+    },
+    {
+      "name": "Agentes de IA",
+      "description": "Vinculación 1:1 de líneas telefónicas con Agentes de Inteligencia Artificial (FastAPI, LangGraph, Dify, SSE Stream)"
     }
   ],
   "components": {
@@ -546,6 +550,88 @@
         "summary": "Reintentar masivamente todas las entregas fallidas",
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": { "200": { "description": "Cantidad de entregas reenviadas a la cola de procesamiento" } }
+      }
+    },
+    "/api/admin/agents": {
+      "get": {
+        "tags": ["Agentes de IA"],
+        "summary": "Listar vinculaciones de líneas con Agentes de IA",
+        "responses": { "200": { "description": "Lista de vinculaciones 1:1" } }
+      },
+      "post": {
+        "tags": ["Agentes de IA"],
+        "summary": "Vincular un Agente de IA a una línea telefónica (Regla 1:1 estricta)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "channelId": { "type": "string", "description": "ID de la línea telefónica" },
+                  "name": { "type": "string", "description": "Nombre identificador del agente" },
+                  "agentUrl": { "type": "string", "description": "URL del endpoint del agente" },
+                  "receptionMode": { "type": "string", "enum": ["sync_json", "sse_stream"], "default": "sync_json" },
+                  "headers": { "type": "object", "description": "Cabeceras HTTP adicionales (tokens, auth)" },
+                  "debounceMs": { "type": "integer", "default": 1500, "description": "Tiempo de espera tras el último mensaje" },
+                  "replyField": { "type": "string", "default": "reply" },
+                  "threadIdMode": { "type": "string", "enum": ["null", "phone"], "default": "null" },
+                  "simulateTyping": { "type": "boolean", "default": true },
+                  "fallbackMessage": { "type": "string" },
+                  "timeoutMs": { "type": "integer", "default": 15000 },
+                  "isActive": { "type": "boolean", "default": true }
+                },
+                "required": ["channelId", "name", "agentUrl"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Agente vinculado exitosamente" },
+          "400": { "description": "Error de validación o línea ya vinculada" }
+        }
+      }
+    },
+    "/api/admin/agents/available-channels": {
+      "get": {
+        "tags": ["Agentes de IA"],
+        "summary": "Listar líneas telefónicas disponibles que aún no tienen agente vinculado",
+        "responses": { "200": { "description": "Líneas telefónicas libres para vinculación" } }
+      }
+    },
+    "/api/admin/agents/{id}": {
+      "get": {
+        "tags": ["Agentes de IA"],
+        "summary": "Obtener vinculación de agente por ID",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Detalle de la vinculación" } }
+      },
+      "put": {
+        "tags": ["Agentes de IA"],
+        "summary": "Actualizar configuración de la vinculación",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Vinculación actualizada" } }
+      },
+      "delete": {
+        "tags": ["Agentes de IA"],
+        "summary": "Desvincular agente de la línea",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Vinculación eliminada" } }
+      }
+    },
+    "/api/admin/agents/{id}/test": {
+      "post": {
+        "tags": ["Agentes de IA"],
+        "summary": "Probar conexión en vivo con el agente vinculado",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Resultado de la prueba y latencia" } }
+      }
+    },
+    "/api/admin/agents/test-endpoint": {
+      "post": {
+        "tags": ["Agentes de IA"],
+        "summary": "Probar conexión previa con un endpoint antes de guardar",
+        "responses": { "200": { "description": "Resultado de la prueba de conectividad" } }
       }
     }
   }

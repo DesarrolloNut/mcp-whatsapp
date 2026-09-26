@@ -13,6 +13,9 @@ import { createTriggersRouter } from './routes/triggers.js';
 import { BaileysSessionManager } from '../../infrastructure/providers/baileys/sessionManager.js';
 import { ITriggerRepository } from '../../domain/ports/ITriggerRepository.js';
 import { TriggerDispatcher } from '../../application/services/triggerDispatcher.js';
+import { IAgentBindingRepository } from '../../domain/ports/IAgentBindingRepository.js';
+import { AgentConnector } from '../../application/services/agentConnector.js';
+import { createAgentsRouter } from './routes/agents.js';
 
 export interface AdminRouterDependencies {
   authService: AdminAuthService;
@@ -21,6 +24,8 @@ export interface AdminRouterDependencies {
   providerFactory: ProviderFactory;
   triggerRepo: ITriggerRepository;
   triggerDispatcher: TriggerDispatcher;
+  agentBindingRepo: IAgentBindingRepository;
+  agentConnector: AgentConnector;
   mcpApiToken?: string;
 }
 
@@ -52,6 +57,7 @@ export function createAdminRouter(deps: AdminRouterDependencies): Router {
   router.use('/channels', authMiddleware, createChannelsRouter(deps.channelRepo, deps.providerRepo));
   router.use('/channels', authMiddleware, createSessionRouter(deps.channelRepo, deps.providerRepo, sessionManager));
   router.use('/triggers', authMiddleware, createTriggersRouter(deps.triggerRepo, deps.triggerDispatcher));
+  router.use('/agents', authMiddleware, createAgentsRouter(deps.agentBindingRepo, deps.channelRepo, deps.agentConnector));
   router.use('/dashboard', authMiddleware, createDashboardRouter(deps.providerRepo, deps.channelRepo, deps.mcpApiToken));
 
   return router;

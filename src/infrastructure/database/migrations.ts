@@ -160,6 +160,32 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    name: '005_agent_bindings',
+    up: (db: Database.Database) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS agent_bindings (
+          id TEXT PRIMARY KEY,
+          channel_id TEXT NOT NULL UNIQUE REFERENCES channels(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          agent_url TEXT NOT NULL,
+          reception_mode TEXT NOT NULL DEFAULT 'sync_json',
+          headers_json TEXT NOT NULL DEFAULT '{}',
+          debounce_ms INTEGER NOT NULL DEFAULT 1500,
+          reply_field TEXT NOT NULL DEFAULT 'reply',
+          thread_id_mode TEXT NOT NULL DEFAULT 'null',
+          simulate_typing INTEGER NOT NULL DEFAULT 1,
+          fallback_message TEXT,
+          timeout_ms INTEGER NOT NULL DEFAULT 15000,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_bindings_channel ON agent_bindings(channel_id);
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

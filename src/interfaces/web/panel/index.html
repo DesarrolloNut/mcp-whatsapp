@@ -61,8 +61,11 @@
         <button class="nav-item" data-tab="triggers">
           <span class="icon">⚡</span> Disparadores (Webhooks)
         </button>
+        <button class="nav-item" data-tab="agents">
+          <span class="icon">🤖</span> Agentes de IA
+        </button>
         <button class="nav-item" data-tab="mcp">
-          <span class="icon">🤖</span> Conexión MCP
+          <span class="icon">🌐</span> Protocolo MCP
         </button>
         <a href="/docs" target="_blank" class="nav-item nav-link-external">
           <span class="icon">📖</span> API Docs (Swagger)
@@ -297,6 +300,41 @@
               </thead>
               <tbody id="triggers-table-body">
                 <tr><td colspan="8" class="text-center text-muted">Cargando disparadores...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab: AI Agents 1:1 Line Binding -->
+      <section id="tab-agents" class="tab-pane">
+        <header class="page-header">
+          <div>
+            <h1>Agentes de IA (Vinculación 1:1 por Línea)</h1>
+            <p class="text-muted">Conecta cada línea telefónica con un Agente de IA externo. El gateway acumula mensajes en ráfaga (debounce), activa "escribiendo..." y envía una respuesta consolidada a WhatsApp.</p>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-secondary btn-sm" id="refresh-agents-btn">↻ Actualizar</button>
+            <button class="btn btn-primary btn-sm" id="open-agent-modal-btn">+ Vincular Agente</button>
+          </div>
+        </header>
+
+        <div class="card mt-4">
+          <div class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Línea Telefónica (Canal)</th>
+                  <th>Nombre del Agente</th>
+                  <th>URL del Endpoint</th>
+                  <th>Modo</th>
+                  <th>Espera Inactividad</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="agents-table-body">
+                <tr><td colspan="7" class="text-center text-muted">Cargando agentes vinculados...</td></tr>
               </tbody>
             </table>
           </div>
@@ -791,6 +829,149 @@
               <tr><td colspan="6" class="text-center text-muted">Cargando entregas...</td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary close-modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Create/Edit AI Agent Binding -->
+  <div id="agent-modal" class="modal hidden">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-header">
+        <h3 id="agent-modal-title">🤖 Vincular Agente de IA a Línea Telefónica</h3>
+        <button class="close-modal">&times;</button>
+      </div>
+      <form id="agent-form">
+        <div class="modal-body">
+          <input type="hidden" id="agent-id">
+
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="agent-channel-select">Línea Telefónica (Canal) *</label>
+              <select id="agent-channel-select" required>
+                <option value="">Selecciona una línea disponible...</option>
+              </select>
+              <small class="text-muted">Regla 1:1: Solo se muestran líneas libres sin agente asignado.</small>
+            </div>
+            <div class="form-group flex-1">
+              <label for="agent-name">Nombre Identificador del Agente *</label>
+              <input type="text" id="agent-name" placeholder="ej. Asesor Comercial de Ventas" required>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-2">
+              <label for="agent-url">URL del Endpoint del Agente *</label>
+              <input type="url" id="agent-url" placeholder="https://mi-servidor-ia.com/api/chat" required>
+              <small class="text-muted">El gateway enviará una petición POST con el formato estándar.</small>
+            </div>
+            <div class="form-group flex-1">
+              <label for="agent-reception-mode">Modo de Recepción</label>
+              <select id="agent-reception-mode">
+                <option value="sync_json">Síncrono (JSON /chat)</option>
+                <option value="sse_stream">Streaming SSE (/chat/stream)</option>
+              </select>
+              <small class="text-muted">SSE acumula los tokens y los envía consolidados a WhatsApp.</small>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="agent-debounce">⏱️ Acumulador de Mensajes Consecutivos (ms) *</label>
+              <input type="number" id="agent-debounce" value="1500" min="200" max="60000" step="100" required>
+              <small class="text-muted">Tiempo de espera tras el último mensaje antes de llamar a la IA (ej. 1500 ms = 1.5s).</small>
+            </div>
+            <div class="form-group flex-1">
+              <label for="agent-reply-field">Propiedad de Respuesta en el JSON</label>
+              <input type="text" id="agent-reply-field" value="reply" placeholder="reply (o data.text)">
+              <small class="text-muted">Campo del JSON de donde se extrae la respuesta (Modo Síncrono).</small>
+            </div>
+            <div class="form-group flex-1">
+              <label for="agent-thread-id">Manejo de Thread ID</label>
+              <select id="agent-thread-id">
+                <option value="null">Dejar null (Recomendado)</option>
+                <option value="phone">Usar número del usuario</option>
+              </select>
+              <small class="text-muted">El agente gestiona el contexto con el user_id.</small>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="agent-headers">Cabeceras HTTP Adicionales (JSON)</label>
+            <textarea id="agent-headers" rows="2" style="font-family: monospace; font-size: 0.85rem;" placeholder='{"Authorization": "Bearer tu-token-secreto"}'></textarea>
+            <small class="text-muted">Opcional. Introduce un JSON válido con cabeceras como Bearer tokens o API Keys.</small>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-2">
+              <label for="agent-fallback">Mensaje de Contingencia (Fallback si el agente falla)</label>
+              <input type="text" id="agent-fallback" placeholder="En este momento no podemos responder, por favor intenta en unos minutos.">
+              <small class="text-muted">Opcional. Mensaje enviado a WhatsApp si el servidor de IA da timeout o error 5xx.</small>
+            </div>
+            <div class="form-group flex-1">
+              <label for="agent-timeout">Timeout (ms)</label>
+              <input type="number" id="agent-timeout" value="15000" min="1000" max="120000" step="1000">
+            </div>
+          </div>
+
+          <div class="form-row mt-2" style="display: flex; gap: 2rem; align-items: center;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label style="cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+                <input type="checkbox" id="agent-simulate-typing" checked>
+                Simular estado "escribiendo..." en WhatsApp mientras la IA procesa
+              </label>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label style="cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+                <input type="checkbox" id="agent-is-active" checked>
+                Vinculación Activa
+              </label>
+            </div>
+          </div>
+
+          <div id="agent-modal-alert" class="alert hidden mt-3"></div>
+        </div>
+        <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+          <button type="button" class="btn btn-secondary" id="agent-test-endpoint-btn">⚡ Probar Conexión</button>
+          <div style="display: flex; gap: 0.5rem;">
+            <button type="button" class="btn btn-secondary close-modal">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="agent-save-btn">Guardar Vinculación</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Test Agent Output -->
+  <div id="agent-test-modal" class="modal hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>⚡ Prueba de Conexión con Agente de IA</h3>
+        <button class="close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="agent-test-loader" class="text-center p-3">
+          <div class="spinner"></div>
+          <p class="text-muted mt-2">Consultando el endpoint del agente...</p>
+        </div>
+        <div id="agent-test-content" class="hidden">
+          <div class="stats-grid mb-3">
+            <div class="stat-card">
+              <span class="stat-title">Resultado</span>
+              <span class="stat-value" id="agent-test-res-status">-</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-title">Latencia</span>
+              <span class="stat-value" id="agent-test-res-duration">-</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Respuesta Obtenida de la IA</label>
+            <pre class="snippet-code" style="max-height: 180px; overflow-y: auto;"><code id="agent-test-res-body">-</code></pre>
+          </div>
         </div>
       </div>
       <div class="modal-footer">

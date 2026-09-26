@@ -186,6 +186,134 @@ async function runGatewaySmoke(): Promise<void> {
       throw new Error(`Expected tool validation error response, got ${JSON.stringify(callData)}`);
     }
     console.log(`✅ MCP HTTP tools/call validated: gracefully handled argument validation error.`);
+
+    // 7. Verify AI Agent 1:1 Binding, Debounce Buffer & Connector
+    console.log('--- Testing AI Agent 1:1 Binding & Debounce Buffer ---');
+    const { SqliteAgentBindingRepository } = await import('./infrastructure/database/repositories/agentBindingRepo.js');
+    const { MessageDebounceBuffer } = await import('./application/services/messageDebounceBuffer.js');
+
+    const agentRepo = new SqliteAgentBindingRepository(db);
+
+    // Clean any previous test binding
+    const existingBindings = await agentRepo.getAllBindings();
+    for (const b of existingBindings) {
+      if (b.id.startsWith('smoke-')) await agentRepo.deleteBinding(b.id);
+    }
+
+    // Ensure valid channel for agent test
+    let smokeChannel = channels[0];
+    if (!smokeChannel) {
+      let prov = providers[0];
+      if (!prov) {
+        prov = await providerRepo.create({
+          name: 'Smoke Provider for Agent',
+          type: 'baileys',
+          baseUrl: 'embedded://whatsapp-web',
+          apiKey: 'mock-key',
+        });
+      }
+      smokeChannel = await channelRepo.create({
+        name: 'Smoke Agent Channel',
+        providerId: prov.id,
+        phoneNumber: '+18095551234',
+      });
+    }
+
+    // Test 7a: Create 1st binding for channel -> Success
+    const binding1 = await agentRepo.createBinding({
+      id: 'smoke-agent-1',
+      channelId: smokeChannel.id,
+      name: 'Asesor Comercial IA',
+      agentUrl: 'http://localhost:9999/chat',
+      receptionMode: 'sync_json',
+      headers: { 'Authorization': 'Bearer test-token' },
+      debounceMs: 500,
+      replyField: 'reply',
+      threadIdMode: 'null',
+      simulateTyping: true,
+      fallbackMessage: 'Fallback smoke test',
+      timeoutMs: 5000,
+      isActive: true,
+    });
+    console.log(`✅ 1:1 Agent Binding created successfully: ${binding1.name} on channel ${binding1.channelId}`);
+
+    // Test 7b: Attempt to bind 2nd agent to same channel -> Must throw error (Strict 1:1)
+    let rule1to1Enforced = false;
+    try {
+      await agentRepo.createBinding({
+        id: 'smoke-agent-2',
+        channelId: smokeChannel.id,
+        name: 'Segundo Agente Prohibido',
+        agentUrl: 'http://localhost:9999/chat2',
+        receptionMode: 'sync_json',
+        headers: {},
+        debounceMs: 1500,
+        replyField: 'reply',
+        threadIdMode: 'null',
+        simulateTyping: true,
+        fallbackMessage: null,
+        timeoutMs: 5000,
+        isActive: true,
+      });
+    } catch (err) {
+      rule1to1Enforced = true;
+      console.log(`✅ Strict 1:1 Line Binding rule enforced: second binding was correctly rejected ("${(err as Error).message}")`);
+    }
+    if (!rule1to1Enforced) {
+      throw new Error('Strict 1:1 Line Binding rule failed: allowed 2 agents on the same line!');
+    }
+
+    // Test 7c: Message Debounce Buffer rapid sequential burst concatenation
+    let dispatchedContext: any = null;
+    const buffer = new MessageDebounceBuffer(async (context) => {
+      dispatchedContext = context;
+    });
+
+    buffer.addMessage({
+      channelId: 'ch1',
+      chatJid: 'user1@s.whatsapp.net',
+      senderPhone: '18095550001',
+      text: 'Hola',
+      messageId: 'm1',
+      timestamp: Date.now(),
+    }, 300);
+
+    // Send message 2 after 100ms (resets trailing timer)
+    await new Promise((r) => setTimeout(r, 100));
+    buffer.addMessage({
+      channelId: 'ch1',
+      chatJid: 'user1@s.whatsapp.net',
+      senderPhone: '18095550001',
+      text: '¿Tienen disponibilidad del producto X?',
+      messageId: 'm2',
+      timestamp: Date.now(),
+    }, 300);
+
+    // Send message 3 after another 100ms
+    await new Promise((r) => setTimeout(r, 100));
+    buffer.addMessage({
+      channelId: 'ch1',
+      chatJid: 'user1@s.whatsapp.net',
+      senderPhone: '18095550001',
+      text: 'Y cuál es el precio por mayor',
+      messageId: 'm3',
+      timestamp: Date.now(),
+    }, 300);
+
+    // Wait for 400ms of silence (> 300ms debounce threshold)
+    await new Promise((r) => setTimeout(r, 450));
+
+    if (!dispatchedContext) {
+      throw new Error('MessageDebounceBuffer failed: did not trigger dispatch after debounce window');
+    }
+    if (dispatchedContext.consolidatedText !== 'Hola\n¿Tienen disponibilidad del producto X?\nY cuál es el precio por mayor') {
+      throw new Error(`MessageDebounceBuffer failed: unexpected consolidated text "${dispatchedContext.consolidatedText}"`);
+    }
+    console.log(`✅ MessageDebounceBuffer validated: 3 rapid burst messages consolidated into 1 prompt after silence window.`);
+
+    // Cleanup test binding
+    await agentRepo.deleteBinding('smoke-agent-1');
+    console.log(`✅ Agent binding cleanup completed.`);
   } finally {
     testServer.close();
   }

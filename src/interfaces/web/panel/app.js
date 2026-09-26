@@ -206,6 +206,7 @@
     if (tabId === 'providers') loadProviders();
     if (tabId === 'channels') loadChannels();
     if (tabId === 'triggers') loadTriggers();
+    if (tabId === 'agents') loadAgents();
     if (tabId === 'mcp') loadMcpGuide();
   };
 
@@ -241,6 +242,10 @@
     channelModal.classList.add('hidden');
     qrModal.classList.add('hidden');
     if (sendMessageModal) sendMessageModal.classList.add('hidden');
+    const agentModal = document.getElementById('agent-modal');
+    if (agentModal) agentModal.classList.add('hidden');
+    const agentTestModal = document.getElementById('agent-test-modal');
+    if (agentTestModal) agentTestModal.classList.add('hidden');
   }
 
   closeButtons.forEach((btn) => {
@@ -1691,6 +1696,337 @@
         loadDeliveries(activeDeliveriesTriggerId);
       }
       loadTriggers();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // 🤖 AI AGENTS CONNECTOR (1:1 LINE BINDING)
+  // ═══════════════════════════════════════════════════════════════════════════════
+  let cachedAgents = [];
+
+  const agentsTableBody = document.getElementById('agents-table-body');
+  const refreshAgentsBtn = document.getElementById('refresh-agents-btn');
+  const openAgentModalBtn = document.getElementById('open-agent-modal-btn');
+  const agentModal = document.getElementById('agent-modal');
+  const agentForm = document.getElementById('agent-form');
+  const agentIdInput = document.getElementById('agent-id');
+  const agentModalTitle = document.getElementById('agent-modal-title');
+  const agentChannelSelect = document.getElementById('agent-channel-select');
+  const agentNameInput = document.getElementById('agent-name');
+  const agentUrlInput = document.getElementById('agent-url');
+  const agentReceptionModeSelect = document.getElementById('agent-reception-mode');
+  const agentDebounceInput = document.getElementById('agent-debounce');
+  const agentReplyFieldInput = document.getElementById('agent-reply-field');
+  const agentThreadIdSelect = document.getElementById('agent-thread-id');
+  const agentHeadersInput = document.getElementById('agent-headers');
+  const agentFallbackInput = document.getElementById('agent-fallback');
+  const agentTimeoutInput = document.getElementById('agent-timeout');
+  const agentSimulateTypingCheckbox = document.getElementById('agent-simulate-typing');
+  const agentIsActiveCheckbox = document.getElementById('agent-is-active');
+  const agentModalAlert = document.getElementById('agent-modal-alert');
+  const agentSaveBtn = document.getElementById('agent-save-btn');
+  const agentTestEndpointBtn = document.getElementById('agent-test-endpoint-btn');
+
+  // Test Modal Elements
+  const agentTestModal = document.getElementById('agent-test-modal');
+  const agentTestLoader = document.getElementById('agent-test-loader');
+  const agentTestContent = document.getElementById('agent-test-content');
+  const agentTestResStatus = document.getElementById('agent-test-res-status');
+  const agentTestResDuration = document.getElementById('agent-test-res-duration');
+  const agentTestResBody = document.getElementById('agent-test-res-body');
+
+  async function loadAgents() {
+    if (!agentsTableBody) return;
+    try {
+      const agents = await api('/api/admin/agents');
+      cachedAgents = agents;
+
+      if (!agents || agents.length === 0) {
+        agentsTableBody.innerHTML = `
+          <tr>
+            <td colspan="7" class="text-center text-muted" style="padding: 2.5rem 1rem;">
+              <div style="font-size: 2rem; margin-bottom: 0.5rem;">🤖</div>
+              <strong>No hay Agentes de IA vinculados aún</strong>
+              <p class="text-muted mt-1">Conecta una línea telefónica con tu servidor de IA (FastAPI, LangGraph, Dify) para respuestas automáticas con control de ráfagas.</p>
+              <button type="button" class="btn btn-primary btn-sm mt-3" onclick="window.openAgentModal()">+ Vincular Primer Agente</button>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      agentsTableBody.innerHTML = agents.map((a) => {
+        const isSse = a.receptionMode === 'sse_stream';
+        const modeBadge = isSse
+          ? `<span class="badge badge-blue">Streaming SSE</span>`
+          : `<span class="badge badge-yellow">Síncrono (JSON)</span>`;
+
+        const activeSwitch = `
+          <label style="cursor: pointer; display: inline-flex; align-items: center; gap: 0.35rem;">
+            <input type="checkbox" ${a.isActive ? 'checked' : ''} onchange="window.toggleAgentActive('${a.id}', this.checked)">
+            <span class="badge ${a.isActive ? 'badge-green' : 'badge-red'}">${a.isActive ? 'Activo' : 'Pausado'}</span>
+          </label>
+        `;
+
+        const debounceFormatted = `${a.debounceMs} ms <small class="text-muted">(${(a.debounceMs / 1000).toFixed(1)}s)</small>`;
+
+        return `
+          <tr>
+            <td>
+              <strong>${escapeHtml(a.channelName)}</strong><br>
+              <small class="text-muted">${escapeHtml(a.channelPhoneNumber || 'Sin número detectado')}</small>
+            </td>
+            <td>
+              <strong>${escapeHtml(a.name)}</strong>
+              ${a.simulateTyping ? '<br><small class="text-green">✍ Escribiendo activado</small>' : ''}
+            </td>
+            <td style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(a.agentUrl)}">
+              <code>${escapeHtml(a.agentUrl)}</code>
+            </td>
+            <td>${modeBadge}</td>
+            <td>⏱️ ${debounceFormatted}</td>
+            <td>${activeSwitch}</td>
+            <td>
+              <div style="display: flex; gap: 0.35rem;">
+                <button type="button" class="btn btn-secondary btn-xs" onclick="window.testAgent('${a.id}')" title="Probar conexión en vivo">⚡ Probar</button>
+                <button type="button" class="btn btn-secondary btn-xs" onclick="window.openAgentModal('${a.id}')">Editar</button>
+                <button type="button" class="btn btn-danger btn-xs" onclick="window.deleteAgent('${a.id}')">Desvincular</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    } catch (err) {
+      agentsTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">Error al cargar agentes: ${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  window.openAgentModal = async (agentId) => {
+    agentModalAlert.classList.add('hidden');
+    agentForm.reset();
+    agentIdInput.value = agentId || '';
+
+    // Load available channels (strict 1:1, excluding the current binding channel if editing)
+    try {
+      const url = `/api/admin/agents/available-channels${agentId ? `?excludeBindingId=${agentId}` : ''}`;
+      const availableChannels = await api(url);
+
+      if (availableChannels.length === 0 && !agentId) {
+        alert('Todas las líneas telefónicas activas ya tienen un Agente de IA vinculado. Para vincular uno nuevo, crea otra línea o desvincula alguna existente (Regla 1:1 estricta).');
+        return;
+      }
+
+      agentChannelSelect.innerHTML = `<option value="">Selecciona una línea disponible...</option>` +
+        availableChannels.map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)} (${escapeHtml(c.phoneNumber || 'Sin número')})</option>`).join('');
+    } catch (err) {
+      alert('Error cargando líneas telefónicas: ' + err.message);
+      return;
+    }
+
+    if (agentId) {
+      const a = cachedAgents.find((item) => item.id === agentId);
+      if (!a) return;
+      agentModalTitle.textContent = '✏ Editar Vinculación de Agente de IA';
+
+      // Ensure channel is option in select if not present
+      const hasOption = Array.from(agentChannelSelect.options).some((opt) => opt.value === a.channelId);
+      if (!hasOption) {
+        const opt = document.createElement('option');
+        opt.value = a.channelId;
+        opt.textContent = `${a.channelName} (${a.channelPhoneNumber || 'Línea Actual'})`;
+        agentChannelSelect.appendChild(opt);
+      }
+
+      agentChannelSelect.value = a.channelId;
+      agentNameInput.value = a.name;
+      agentUrlInput.value = a.agentUrl;
+      agentReceptionModeSelect.value = a.receptionMode || 'sync_json';
+      agentDebounceInput.value = a.debounceMs ?? 1500;
+      agentReplyFieldInput.value = a.replyField || 'reply';
+      agentThreadIdSelect.value = a.threadIdMode || 'null';
+      agentHeadersInput.value = Object.keys(a.headers || {}).length > 0 ? JSON.stringify(a.headers, null, 2) : '';
+      agentFallbackInput.value = a.fallbackMessage || '';
+      agentTimeoutInput.value = a.timeoutMs || 15000;
+      agentSimulateTypingCheckbox.checked = a.simulateTyping !== false;
+      agentIsActiveCheckbox.checked = a.isActive !== false;
+    } else {
+      agentModalTitle.textContent = '🤖 Vincular Agente de IA a Línea Telefónica';
+      agentChannelSelect.value = '';
+      agentNameInput.value = '';
+      agentUrlInput.value = '';
+      agentReceptionModeSelect.value = 'sync_json';
+      agentDebounceInput.value = 1500;
+      agentReplyFieldInput.value = 'reply';
+      agentThreadIdSelect.value = 'null';
+      agentHeadersInput.value = '{\n  "Authorization": "Bearer tu-token-secreto"\n}';
+      agentFallbackInput.value = '';
+      agentTimeoutInput.value = 15000;
+      agentSimulateTypingCheckbox.checked = true;
+      agentIsActiveCheckbox.checked = true;
+    }
+
+    agentModal.classList.remove('hidden');
+  };
+
+  if (openAgentModalBtn) {
+    openAgentModalBtn.addEventListener('click', () => window.openAgentModal());
+  }
+  if (refreshAgentsBtn) {
+    refreshAgentsBtn.addEventListener('click', loadAgents);
+  }
+
+  if (agentForm) {
+    agentForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      agentModalAlert.classList.add('hidden');
+      agentSaveBtn.disabled = true;
+
+      try {
+        const id = agentIdInput.value;
+
+        let headers = {};
+        if (agentHeadersInput.value.trim()) {
+          try {
+            headers = JSON.parse(agentHeadersInput.value.trim());
+          } catch {
+            throw new Error('El campo Cabeceras HTTP no contiene un JSON válido.');
+          }
+        }
+
+        const body = {
+          channelId: agentChannelSelect.value,
+          name: agentNameInput.value.trim(),
+          agentUrl: agentUrlInput.value.trim(),
+          receptionMode: agentReceptionModeSelect.value,
+          headers,
+          debounceMs: Number(agentDebounceInput.value) || 1500,
+          replyField: agentReplyFieldInput.value.trim() || 'reply',
+          threadIdMode: agentThreadIdSelect.value || 'null',
+          simulateTyping: agentSimulateTypingCheckbox.checked,
+          fallbackMessage: agentFallbackInput.value.trim() || null,
+          timeoutMs: Number(agentTimeoutInput.value) || 15000,
+          isActive: agentIsActiveCheckbox.checked,
+        };
+
+        if (id) {
+          await api(`/api/admin/agents/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+        } else {
+          await api('/api/admin/agents', { method: 'POST', body: JSON.stringify(body) });
+        }
+
+        agentModal.classList.add('hidden');
+        loadAgents();
+      } catch (err) {
+        agentModalAlert.textContent = err.message;
+        agentModalAlert.className = 'alert error';
+        agentModalAlert.classList.remove('hidden');
+      } finally {
+        agentSaveBtn.disabled = false;
+      }
+    });
+  }
+
+  if (agentTestEndpointBtn) {
+    agentTestEndpointBtn.addEventListener('click', async () => {
+      const agentUrl = agentUrlInput.value.trim();
+      if (!agentUrl) {
+        alert('Por favor introduce la URL del endpoint del agente para probar la conexión.');
+        return;
+      }
+
+      let headers = {};
+      if (agentHeadersInput.value.trim()) {
+        try {
+          headers = JSON.parse(agentHeadersInput.value.trim());
+        } catch {
+          alert('Las cabeceras HTTP deben ser un JSON válido.');
+          return;
+        }
+      }
+
+      agentTestModal.classList.remove('hidden');
+      agentTestLoader.classList.remove('hidden');
+      agentTestContent.classList.add('hidden');
+
+      try {
+        const res = await api('/api/admin/agents/test-endpoint', {
+          method: 'POST',
+          body: JSON.stringify({
+            agentUrl,
+            receptionMode: agentReceptionModeSelect.value,
+            headers,
+            replyField: agentReplyFieldInput.value.trim() || 'reply',
+            threadIdMode: agentThreadIdSelect.value || 'null',
+            timeoutMs: Number(agentTimeoutInput.value) || 15000,
+          }),
+        });
+
+        agentTestLoader.classList.add('hidden');
+        agentTestContent.classList.remove('hidden');
+
+        agentTestResStatus.textContent = res.success ? 'Conectado Exitosamente' : 'Error en Respuesta';
+        agentTestResStatus.className = `stat-value ${res.success ? 'text-green' : 'text-danger'}`;
+        agentTestResDuration.textContent = `${res.latencyMs} ms`;
+        agentTestResBody.textContent = res.reply || (res.error ? `Error: ${res.error}` : '(Respuesta vacía)');
+      } catch (err) {
+        agentTestLoader.classList.add('hidden');
+        agentTestContent.classList.remove('hidden');
+        agentTestResStatus.textContent = 'Fallo de Red';
+        agentTestResStatus.className = 'stat-value text-danger';
+        agentTestResDuration.textContent = '0 ms';
+        agentTestResBody.textContent = err.message;
+      }
+    });
+  }
+
+  window.testAgent = async (agentId) => {
+    agentTestModal.classList.remove('hidden');
+    agentTestLoader.classList.remove('hidden');
+    agentTestContent.classList.add('hidden');
+
+    try {
+      const res = await api(`/api/admin/agents/${agentId}/test`, { method: 'POST' });
+      agentTestLoader.classList.add('hidden');
+      agentTestContent.classList.remove('hidden');
+
+      agentTestResStatus.textContent = res.success ? 'Conectado Exitosamente' : 'Error en Respuesta';
+      agentTestResStatus.className = `stat-value ${res.success ? 'text-green' : 'text-danger'}`;
+      agentTestResDuration.textContent = `${res.latencyMs} ms`;
+      agentTestResBody.textContent = res.reply || (res.error ? `Error: ${res.error}` : '(Respuesta vacía)');
+    } catch (err) {
+      agentTestLoader.classList.add('hidden');
+      agentTestContent.classList.remove('hidden');
+      agentTestResStatus.textContent = 'Error';
+      agentTestResStatus.className = 'stat-value text-danger';
+      agentTestResDuration.textContent = '0 ms';
+      agentTestResBody.textContent = err.message;
+    }
+  };
+
+  window.toggleAgentActive = async (id, isActive) => {
+    try {
+      await api(`/api/admin/agents/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ isActive }),
+      });
+      loadAgents();
+    } catch (err) {
+      alert(err.message);
+      loadAgents();
+    }
+  };
+
+  window.deleteAgent = async (id) => {
+    const a = cachedAgents.find((item) => item.id === id);
+    const lineName = a ? a.channelName : 'la línea';
+    if (!confirm(`¿Estás seguro de desvincular el agente de ${lineName}?\nLa línea volverá a quedar libre para conectar otro agente.`)) {
+      return;
+    }
+    try {
+      await api(`/api/admin/agents/${id}`, { method: 'DELETE' });
+      loadAgents();
     } catch (err) {
       alert(err.message);
     }

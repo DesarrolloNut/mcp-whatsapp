@@ -17,6 +17,7 @@ Permite conectar agentes IA a WhatsApp mediante **conexión directa a WhatsApp W
 - **Persistencia Montada en Disco (SQLite + Sesiones):** Configuración resguardada en `./data/mcp-whatsapp.db` con modo WAL y credenciales de sesión en `./data/sessions/<channel_id>/`, garantizando **cero pérdida de datos o desvinculaciones** tras reinicios o despliegues Docker.
 - **Copias de Seguridad en Caliente:** Script integrado `npm run db:backup` para generar snapshots sin detener el servicio.
 - **Disparadores Asíncronos (Webhooks Salientes con Cola Outbox):** Reacciona automáticamente a mensajes entrantes de WhatsApp despachando peticiones HTTP personalizadas hacia CRMs, ERPs, Slack o n8n. Incluye transformación dinámica de datos (`{{sender.phoneNumber}}`), reintentos con *exponential backoff*, firma HMAC-SHA256 y reintento masivo de fallos desde el panel web (Ver [docs/webhooks-and-triggers.md](docs/webhooks-and-triggers.md)).
+- **Conector de Agentes de IA (1:1 por Línea y Debounce Buffer):** Vincula directamente cualquier línea telefónica con un Agente de IA externo (FastAPI, LangGraph, Dify, OpenAI, Claude). Acumula ráfagas de mensajes cortos en una ventana de inactividad configurable (ej. 1.5s), simula "escribiendo...", soporta modo Síncrono (JSON) y Streaming SSE, y envía la respuesta consolidada a WhatsApp (Ver [docs/ai-agents-connection.md](docs/ai-agents-connection.md)).
 - **Retrocompatibilidad Total:** Mantiene compatibilidad con clientes existentes mediante alias automáticos `evolution_*` y modo legacy `stdio`.
 
 ---

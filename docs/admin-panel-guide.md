@@ -61,6 +61,16 @@
 - **⚡ Probar en Vivo:** Envía una petición de prueba simulada inmediata al receptor y muestra en pantalla el código HTTP devuelto, tiempo de respuesta en ms y cuerpo devuelto.
 - **📋 Entregas y Cola Outbox:** Inspecciona el historial de entregas de cada disparador, visualiza causas de error y reintenta mensajes individuales o utiliza el botón **`↻ Reintentar Todos los Fallidos`**.
 
+### 2.5 Gestión de Agentes de IA (Vinculación 1:1 y Debounce Buffer)
+- **Vincular Agente:** Asocia directamente una línea telefónica con un servidor de IA (FastAPI, LangGraph, Dify, etc.):
+  - **Regla 1:1 Estricta:** Solo se permite un único agente por línea telefónica para evitar respuestas cruzadas o contradictorias.
+  - **Modos de Recepción:** Soporta **Síncrono (JSON /chat)** y **Streaming SSE (/chat/stream)**.
+  - **Acumulador Debounce:** Parámetro configurable (por defecto `1500 ms`) para esperar silencio tras el último mensaje antes de llamar a la IA, consolidando mensajes en ráfaga.
+  - **Simulación de Presencia:** Activa el estado "escribiendo..." en WhatsApp mientras la IA procesa.
+  - **Mensaje de Contingencia:** Mensaje de respaldo entregado a WhatsApp si el servidor de IA falla o agota el tiempo de espera.
+  - **Prueba en Vivo:** Botón `⚡ Probar` para validar la conectividad y medir la latencia antes o después de guardar.
+  - Para más detalles, consulta la [Guía Completa de Conexión de Agentes de IA](file:///c:/Users/jvelez/Documents/projects/mcp-whatsapp/docs/ai-agents-connection.md).
+
 ---
 
 ## 3. Documentación Interactiva OpenAPI / Swagger UI

@@ -119,6 +119,21 @@ export class BaileysSessionManager {
     return this.sessions.get(channelId)?.socket || null;
   }
 
+  public async setPresence(
+    channelId: string,
+    jid: string,
+    presence: 'composing' | 'paused' | 'available' | 'unavailable' = 'composing'
+  ): Promise<void> {
+    const socket = this.getSocket(channelId);
+    if (socket && typeof socket.sendPresenceUpdate === 'function') {
+      try {
+        await socket.sendPresenceUpdate(presence, jid);
+      } catch {
+        // Non-critical, ignore presence updates errors
+      }
+    }
+  }
+
   public getStatus(channelId: string): {
     status: SessionStatus;
     qrDataUrl: string | null;
